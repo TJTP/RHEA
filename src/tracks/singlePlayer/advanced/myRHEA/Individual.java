@@ -1,4 +1,5 @@
-package tracks.singlePlayer.advanced.sampleRHEA;
+package tracks.singlePlayer.advanced.myRHEA;
+
 import java.util.Random;
 
 public class Individual implements Comparable{
@@ -54,7 +55,7 @@ public class Individual implements Comparable{
      * @param CROSSOVER_TYPE - type of crossover
      */
     public void crossover (Individual parent1, Individual parent2, int CROSSOVER_TYPE) {
-        if (CROSSOVER_TYPE == Agent.POINT1_CROSS) {
+        if (CROSSOVER_TYPE == tracks.singlePlayer.advanced.myRHEA.Agent.POINT1_CROSS) {
             // 1-point
             int p = gen.nextInt(actions.length - 3) + 1;
             for ( int i = 0; i < actions.length; i++) {
