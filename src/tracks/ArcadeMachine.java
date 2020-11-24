@@ -408,6 +408,7 @@ public class ArcadeMachine {
 
 	StatSummary[] victories = new StatSummary[toPlay.getNoPlayers()];
 	StatSummary[] scores = new StatSummary[toPlay.getNoPlayers()];
+	double wholeTimetick = 0.0;
 	for (int i = 0; i < toPlay.getNoPlayers(); i++) {
 	    victories[i] = new StatSummary();
 	    scores[i] = new StatSummary();
@@ -422,7 +423,8 @@ public class ArcadeMachine {
 
 		// Determine the random seed, different for each game to be
 		// played.
-		int randomSeed = new Random().nextInt();
+		//int randomSeed = new Random().nextInt();
+		int randomSeed = 2020;
 
 		// build the level in the game.
 		toPlay.buildLevel(level_file, randomSeed);
@@ -497,7 +499,7 @@ public class ArcadeMachine {
 			scores[id].add(score[id]);
 			victories[id].add(toPlay.getWinner(id) == Types.WINNER.PLAYER_WINS ? 1 : 0);
 		    }
-
+		wholeTimetick += toPlay.getFullResult()[2];
 		// reset the game.
 		toPlay.reset();
 	    }
@@ -516,6 +518,7 @@ public class ArcadeMachine {
 	}
 	System.out.println("Results in game " + game_file + ", " + vict + " , " + sc);
 	 	//+ " , " + performance.mean());
+	System.out.printf("Mean time steps: %f\n", wholeTimetick / level_times);
     }
 
     /**
