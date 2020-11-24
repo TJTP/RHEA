@@ -13,35 +13,37 @@ import java.util.HashMap;
 import java.util.Random;
 
 public class Agent extends AbstractPlayer {
-    // Parameters
-    private int POPULATION_SIZE = 10;
-    private int SIMULATION_DEPTH = 10;
-    private int CROSSOVER_TYPE = UNIFORM_CROSS;
-    private boolean REEVALUATE = false;
-    private int MUTATION = 1;
-    private int TOURNAMENT_SIZE = 2;
-    private int ELITISM = 1;
-    private StateHeuristic heuristic;
 
     // Constants
-    private final long BREAK_MS = 10;
-    public static final double epsilon = 1e-6;
-    static final int POINT1_CROSS = 0;
-    static final int UNIFORM_CROSS = 1;
+    protected static final int UNIFORM_CROSS = 0;
+    protected static final int POINT1_CROSS = 1;
+    protected static final int POINT2_CROSS = 2;
+    protected static final double MUT_PROB = 0.9;
+    private static final int POPULATION_SIZE = 10;
+    private static final long BREAK_MS = 10;
+    private static final int SIMULATION_DEPTH = 10;
+    private static final int MUTATION = 1;
+    private static final int ELITISM = 2;
+    private static final int TOURNAMENT_SIZE = 3;
+    private static final int BETTER_PARENT_RANK = 5; //前 BETTER_PARENT_RANK 个个体视为优秀父母个体
+    private static final double BETTER_PARENT_PROB = 0.8; //在选择个体进入tournament时,
+                                                        // 以 BETTER_PARENT_RATIO 概率选择前 BETTER_PARENT_RANK 范围内的个体
 
-    // Class vars
+    // Parameters
+    private int crossType;
+    private int indNum;
+    private int numActions;
+    private StateHeuristic heuristic;
     private Individual[] population, nextPop;
-    private int NUM_INDIVIDUALS;
-    private int N_ACTIONS;
-    private HashMap<Integer, Types.ACTIONS> action_mapping;
+    private HashMap<Integer, Types.ACTIONS> actionMapping;
     private Random randomGenerator;
 
     // Budgets
     private ElapsedCpuTimer timer;
-    private double acumTimeTakenEval = 0,avgTimeTakenEval = 0, avgTimeTaken = 0, acumTimeTaken = 0;
-    private int numEvals = 0, numIters = 0;
-    private boolean keepIterating = true;
-    private long remaining;
+    private double acumTimeTakenEval, avgTimeTakenEval, avgTimeTaken, acumTimeTaken;
+    private int numEvals, numIters;
+    private boolean keepIterating;
+    private long globalRemaining;
 
     /**
      * Public constructor with state observation and time due.
@@ -50,35 +52,46 @@ public class Agent extends AbstractPlayer {
      * @param elapsedTimer Timer for the controller creation.
      */
     public Agent(StateObservation stateObs, ElapsedCpuTimer elapsedTimer) {
-        randomGenerator = new Random();
-        heuristic = new WinScoreHeuristic(stateObs);
+        this.crossType = UNIFORM_CROSS;
+        //this.heuristic = new MyHeuristic();
+        this.heuristic = new WinScoreHeuristic(stateObs);
+        this.randomGenerator = new Random();
+
         this.timer = elapsedTimer;
+        this.acumTimeTakenEval = 0;
+        this.avgTimeTakenEval = 0;
+        this.avgTimeTaken = 0;
+        this.acumTimeTaken = 0;
+        this.numEvals = 0;
+        this.numIters = 0;
+        this.keepIterating = true;
+
     }
 
     @Override
     public Types.ACTIONS act(StateObservation stateObs, ElapsedCpuTimer elapsedTimer) {
         this.timer = elapsedTimer;
-        avgTimeTaken = 0;
-        acumTimeTaken = 0;
-        numEvals = 0;
-        acumTimeTakenEval = 0;
-        numIters = 0;
-        remaining = timer.remainingTimeMillis();
-        NUM_INDIVIDUALS = 0;
-        keepIterating = true;
+        this.avgTimeTaken = 0;
+        this.acumTimeTaken = 0;
+        this.numEvals = 0;
+        this.acumTimeTakenEval = 0;
+        this.numIters = 0;
+        this.globalRemaining = timer.remainingTimeMillis();
+        this.indNum = 0;
+        this.keepIterating = true;
 
         // INITIALISE POPULATION
         init_pop(stateObs);
 
         // RUN EVOLUTION
-        remaining = timer.remainingTimeMillis();
-        while (remaining > avgTimeTaken && remaining > BREAK_MS && keepIterating) {
+        this.globalRemaining = this.timer.remainingTimeMillis();
+        while (this.globalRemaining > this.avgTimeTaken && this.globalRemaining > BREAK_MS && this.keepIterating) {
             runIteration(stateObs);
-            remaining = timer.remainingTimeMillis();
+            this.globalRemaining = this.timer.remainingTimeMillis();
         }
 
         // RETURN ACTION
-        return get_best_action(population);
+        return get_best_action(this.population);
     }
 
     /**
@@ -88,33 +101,24 @@ public class Agent extends AbstractPlayer {
     private void runIteration(StateObservation stateObs) {
         ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
 
-        if (REEVALUATE) {
-            for (int i = 0; i < ELITISM; i++) {
-                if (remaining > 2*avgTimeTakenEval && remaining > BREAK_MS) { // if enough time to evaluate one more individual
-                    evaluate(population[i], heuristic, stateObs);
-                } else {keepIterating = false;}
-            }
-        }
-
-        if (NUM_INDIVIDUALS > 1) {
-            for (int i = ELITISM; i < NUM_INDIVIDUALS; i++) {
-                if (remaining > 2*avgTimeTakenEval && remaining > BREAK_MS) { // if enough time to evaluate one more individual
-                    Individual newind;
-
-                    newind = crossover();
-                    newind = newind.mutate(MUTATION);
+        if (this.indNum > 1) {
+            for (int i = ELITISM; i < this.indNum; i++) {
+                if (this.globalRemaining > 2 * this.avgTimeTakenEval && this.globalRemaining > BREAK_MS) {
+                    // if enough time to evaluate one more individual
+                    Individual newInd = crossover();
+                    newInd = newInd.mutate(MUTATION);
 
                     // evaluate new individual, insert into population
-                    add_individual(newind, nextPop, i, stateObs);
+                    add_individual(newInd, this.nextPop, i, stateObs);
 
-                    remaining = timer.remainingTimeMillis();
+                    this.globalRemaining = this.timer.remainingTimeMillis();
                 } else {
-                    keepIterating = false;
+                    this.keepIterating = false;
                     break;
                 }
             }
 
-            Arrays.sort(nextPop, (o1, o2) -> {
+            Arrays.sort(this.nextPop, (o1, o2) -> {
                 if (o1 == null && o2 == null) {
                     return 0;
                 }
@@ -127,18 +131,18 @@ public class Agent extends AbstractPlayer {
                 return o1.compareTo(o2);
             });
 
-        } else if (NUM_INDIVIDUALS == 1){
-            Individual newind = new Individual(SIMULATION_DEPTH, N_ACTIONS, randomGenerator).mutate(MUTATION);
-            evaluate(newind, heuristic, stateObs);
-            if (newind.value > population[0].value)
-                nextPop[0] = newind;
+        } else if (this.indNum == 1){
+            Individual newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator).mutate(MUTATION);
+            evaluate(newInd, this.heuristic, stateObs);
+            if (newInd.value > this.population[0].value)
+                this.nextPop[0] = newInd;
         }
 
-        population = nextPop.clone();
+        this.population = this.nextPop.clone();
 
-        numIters++;
-        acumTimeTaken += (elapsedTimerIteration.elapsedMillis());
-        avgTimeTaken = acumTimeTaken / numIters;
+        this.numIters++;
+        this.acumTimeTaken += (elapsedTimerIteration.elapsedMillis());
+        this.avgTimeTaken = this.acumTimeTaken / this.numIters;
     }
 
     /**
@@ -153,71 +157,83 @@ public class Agent extends AbstractPlayer {
 
         ElapsedCpuTimer elapsedTimerIterationEval = new ElapsedCpuTimer();
 
-        StateObservation st = state.copy();
+        StateObservation stCopy = state.copy();
         int i;
         double acum = 0, avg;
         for (i = 0; i < SIMULATION_DEPTH; i++) {
-            if (! st.isGameOver()) {
+            if (!stCopy.isGameOver()) {
                 ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
-                st.advance(action_mapping.get(individual.actions[i]));
+                stCopy.advance(this.actionMapping.get(individual.actions[i]));
 
                 acum += elapsedTimerIteration.elapsedMillis();
                 avg = acum / (i+1);
-                remaining = timer.remainingTimeMillis();
-                if (remaining < 2*avg || remaining < BREAK_MS) break;
+                this.globalRemaining = this.timer.remainingTimeMillis();
+                if (this.globalRemaining < 2 * avg || this.globalRemaining < BREAK_MS) break;
             } else {
                 break;
             }
         }
 
-        individual.value = heuristic.evaluateState(st);
+        individual.value = this.heuristic.evaluateState(stCopy);
 
-        numEvals++;
-        acumTimeTakenEval += (elapsedTimerIterationEval.elapsedMillis());
-        avgTimeTakenEval = acumTimeTakenEval / numEvals;
-        remaining = timer.remainingTimeMillis();
+        this.numEvals++;
+        this.acumTimeTakenEval += (elapsedTimerIterationEval.elapsedMillis());
+        this.avgTimeTakenEval = this.acumTimeTakenEval / this.numEvals;
+        this.globalRemaining = this.timer.remainingTimeMillis();
 
         return individual.value;
     }
 
     /**
+     * 在 parent selection 环节, 前 BETTER_PARENT_RANK 个个体更有可能被选为parents
+     * 在 crossover 时, 随机从三种算子中随机选择一种
      * @return - the individual resulting from crossover applied to the specified population
      */
     private Individual crossover() {
-        Individual newind = null;
-        if (NUM_INDIVIDUALS > 1) {
-            newind = new Individual(SIMULATION_DEPTH, N_ACTIONS, randomGenerator);
+        Individual newInd = null;
+        if (this.indNum > 1) {
+            newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
             Individual[] tournament = new Individual[TOURNAMENT_SIZE];
-            ArrayList<Individual> list = new ArrayList<>(Arrays.asList(population));
+            ArrayList<Individual> popList = new ArrayList<>(Arrays.asList(this.population));
 
             //Select a number of random distinct individuals for tournament and sort them based on value
+            Random ratioGenerator = new Random();
+            int betterParentRank = popList.size() > BETTER_PARENT_RANK ? BETTER_PARENT_RANK : popList.size() / 2;
             for (int i = 0; i < TOURNAMENT_SIZE; i++) {
-                int index = randomGenerator.nextInt(list.size());
-                tournament[i] = list.get(index);
-                list.remove(index);
+                if (ratioGenerator.nextInt(100) < BETTER_PARENT_PROB * 100) {
+                    int idx = this.randomGenerator.nextInt(betterParentRank);
+                    tournament[i] = popList.get(idx);
+                    popList.remove(idx);
+                } else {
+                    int idx = this.randomGenerator.nextInt(popList.size() - betterParentRank) + betterParentRank;
+                    tournament[i] = popList.get(idx);
+                    popList.remove(idx);
+                }
             }
             Arrays.sort(tournament);
 
             //get best individuals in tournament as parents
             if (TOURNAMENT_SIZE >= 2) {
-                newind.crossover(tournament[0], tournament[1], CROSSOVER_TYPE);
+                Random crossGenerator = new Random();
+                this.crossType = crossGenerator.nextInt(3);
+                newInd.crossover(tournament[0], tournament[1], this.crossType);
             } else {
                 System.out.println("WARNING: Number of parents must be LESS than tournament size.");
             }
         }
-        return newind;
+        return newInd;
     }
 
     /**
      * Insert a new individual into the population at the specified position by replacing the old one.
-     * @param newind - individual to be inserted into population
+     * @param newInd - individual to be inserted into population
      * @param pop - population
      * @param idx - position where individual should be inserted
      * @param stateObs - current game state
      */
-    private void add_individual(Individual newind, Individual[] pop, int idx, StateObservation stateObs) {
-        evaluate(newind, heuristic, stateObs);
-        pop[idx] = newind.copy();
+    private void add_individual(Individual newInd, Individual[] pop, int idx, StateObservation stateObs) {
+        evaluate(newInd, this.heuristic, stateObs);
+        pop[idx] = newInd.copy();
     }
 
     /**
@@ -226,30 +242,30 @@ public class Agent extends AbstractPlayer {
      */
     private void init_pop(StateObservation stateObs) {
 
-        double remaining = timer.remainingTimeMillis();
+        double remaining = this.timer.remainingTimeMillis();
 
-        N_ACTIONS = stateObs.getAvailableActions().size() + 1;
-        action_mapping = new HashMap<>();
+        this.numActions = stateObs.getAvailableActions().size() + 1;
+        this.actionMapping = new HashMap<>();
         int k = 0;
         for (Types.ACTIONS action : stateObs.getAvailableActions()) {
-            action_mapping.put(k, action);
+            this.actionMapping.put(k, action);
             k++;
         }
-        action_mapping.put(k, Types.ACTIONS.ACTION_NIL);
+        this.actionMapping.put(k, Types.ACTIONS.ACTION_NIL);
 
-        population = new Individual[POPULATION_SIZE];
-        nextPop = new Individual[POPULATION_SIZE];
+        this.population = new Individual[POPULATION_SIZE];
+        this.nextPop = new Individual[POPULATION_SIZE];
         for (int i = 0; i < POPULATION_SIZE; i++) {
-            if (i == 0 || remaining > avgTimeTakenEval && remaining > BREAK_MS) {
-                population[i] = new Individual(SIMULATION_DEPTH, N_ACTIONS, randomGenerator);
-                evaluate(population[i], heuristic, stateObs);
-                remaining = timer.remainingTimeMillis();
-                NUM_INDIVIDUALS = i+1;
+            if (i == 0 || remaining > this.avgTimeTakenEval && remaining > BREAK_MS) {
+                population[i] = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
+                evaluate(this.population[i], this.heuristic, stateObs);
+                remaining = this.timer.remainingTimeMillis();
+                this.indNum = i + 1;
             } else {break;}
         }
 
-        if (NUM_INDIVIDUALS > 1)
-            Arrays.sort(population, (o1, o2) -> {
+        if (this.indNum > 1)
+            Arrays.sort(this.population, (o1, o2) -> {
                 if (o1 == null && o2 == null) {
                     return 0;
                 }
@@ -261,9 +277,10 @@ public class Agent extends AbstractPlayer {
                 }
                 return o1.compareTo(o2);
             });
-        for (int i = 0; i < NUM_INDIVIDUALS; i++) {
-            if (population[i] != null)
-                nextPop[i] = population[i].copy();
+
+        for (int i = 0; i < this.indNum; i++) {
+            if (this.population[i] != null)
+                this.nextPop[i] = this.population[i].copy();
         }
 
     }
@@ -274,6 +291,6 @@ public class Agent extends AbstractPlayer {
      */
     private Types.ACTIONS get_best_action(Individual[] pop) {
         int bestAction = pop[0].actions[0];
-        return action_mapping.get(bestAction);
+        return this.actionMapping.get(bestAction);
     }
 }

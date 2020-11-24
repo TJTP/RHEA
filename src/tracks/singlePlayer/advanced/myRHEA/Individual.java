@@ -31,19 +31,23 @@ public class Individual implements Comparable{
         Individual b = this.copy();
         b.setActions(actions);
 
-        int count = 0;
-        if (nLegalActions > 1) { // make sure you can actually mutate
-            while (count < MUT) {
-                int a; // index of action to mutate
+        Random mutProbGenerator = new Random();
+        if (mutProbGenerator.nextFloat() < Agent.MUT_PROB) {
+            // 以 Agent.mutProb 的概率发生突变
+            int count = 0;
+            if (nLegalActions > 1) { // make sure you can actually mutate
+                while (count < MUT) {
+                    int a; // index of action to mutate
 
-                // random mutation of one action
-                a = gen.nextInt(b.actions.length);
+                    // random mutation of one action
+                    a = gen.nextInt(b.actions.length);
 
-                int s;
-                s = gen.nextInt(nLegalActions); // find new action
-                b.actions[a] = s;
+                    int s;
+                    s = gen.nextInt(nLegalActions); // find new action
+                    b.actions[a] = s;
 
-                count++;
+                    count++;
+                }
             }
         }
 
@@ -55,7 +59,7 @@ public class Individual implements Comparable{
      * @param CROSSOVER_TYPE - type of crossover
      */
     public void crossover (Individual parent1, Individual parent2, int CROSSOVER_TYPE) {
-        if (CROSSOVER_TYPE == tracks.singlePlayer.advanced.myRHEA.Agent.POINT1_CROSS) {
+        if (CROSSOVER_TYPE == Agent.POINT1_CROSS) {
             // 1-point
             int p = gen.nextInt(actions.length - 3) + 1;
             for ( int i = 0; i < actions.length; i++) {
@@ -72,6 +76,19 @@ public class Individual implements Comparable{
                     actions[i] = parent1.actions[i];
                 else
                     actions[i] = parent2.actions[i];
+            }
+        } else if (CROSSOVER_TYPE == Agent.POINT2_CROSS) {
+            int m1 = gen.nextInt((int)Math.floor(actions.length / 2));
+            int m2 = gen.nextInt((int)Math.ceil(actions.length / 2)) + (int)Math.floor(actions.length / 2);
+
+            for (int i = 0; i < actions.length; i++) {
+                if (i <= m1) {
+                    actions[i] = parent1.actions[i];
+                } else if (m1 < i && i < m2) {
+                    actions[i] = parent2.actions[i];
+                } else if (i >= m2) {
+                    actions[i] = parent1.actions[i];
+                }
             }
         }
     }
