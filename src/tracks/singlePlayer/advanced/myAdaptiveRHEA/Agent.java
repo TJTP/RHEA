@@ -1,4 +1,4 @@
-package tracks.singlePlayer.advanced.myRHEA;
+package tracks.singlePlayer.advanced.myAdaptiveRHEA;
 
 import core.game.StateObservation;
 import core.player.AbstractPlayer;

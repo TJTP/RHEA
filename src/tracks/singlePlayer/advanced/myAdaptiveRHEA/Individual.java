@@ -1,4 +1,4 @@
-package tracks.singlePlayer.advanced.myRHEA;
+package tracks.singlePlayer.advanced.myAdaptiveRHEA;
 
 import java.util.ArrayList;
 import java.util.Random;
