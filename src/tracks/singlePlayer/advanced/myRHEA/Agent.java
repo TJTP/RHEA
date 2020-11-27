@@ -18,25 +18,29 @@ public class Agent extends AbstractPlayer {
     protected static final int UNIFORM_CROSS = 0;
     protected static final int POINT1_CROSS = 1;
     protected static final int POINT2_CROSS = 2;
-    protected static final double MUT_PROB = 0.9;
+    protected static final double MUT_PROB = 0.6;
     private static final int POPULATION_SIZE = 10;
     private static final long BREAK_MS = 10;
-    private static final int SIMULATION_DEPTH = 10;
-    private static final int MUTATION = 1;
+    private static final int SIMULATION_DEPTH = 8;
+    private static final int MUTATION_NUM = 1;
     private static final int ELITISM = 2;
     private static final int TOURNAMENT_SIZE = 3;
     private static final int BETTER_PARENT_RANK = 5; //前 BETTER_PARENT_RANK 个个体视为优秀父母个体
-    private static final double BETTER_PARENT_PROB = 0.8; //在选择个体进入tournament时,
+    private static final double BETTER_PARENT_PROB = 0.6; //在选择个体进入tournament时,
                                                         // 以 BETTER_PARENT_RATIO 概率选择前 BETTER_PARENT_RANK 范围内的个体
+    private static final int MAX_ITER_DIFF = 5;
 
     // Parameters
     private int crossType;
     private int indNum;
     private int numActions;
+    private boolean isFirstTime;
     private StateHeuristic heuristic;
     private Individual[] population, nextPop;
     private HashMap<Integer, Types.ACTIONS> actionMapping;
     private Random randomGenerator;
+    private int lastIterNum;
+    private boolean mutOnFirst;
 
     // Budgets
     private ElapsedCpuTimer timer;
@@ -53,18 +57,13 @@ public class Agent extends AbstractPlayer {
      */
     public Agent(StateObservation stateObs, ElapsedCpuTimer elapsedTimer) {
         this.crossType = UNIFORM_CROSS;
+        this.indNum = 0;
+        this.isFirstTime = true;
         //this.heuristic = new MyHeuristic();
         this.heuristic = new WinScoreHeuristic(stateObs);
         this.randomGenerator = new Random();
-
-        this.timer = elapsedTimer;
-        this.acumTimeTakenEval = 0;
-        this.avgTimeTakenEval = 0;
-        this.avgTimeTaken = 0;
-        this.acumTimeTaken = 0;
-        this.numEvals = 0;
-        this.numIters = 0;
-        this.keepIterating = true;
+        this.lastIterNum = 1;
+        this.mutOnFirst = false;
 
     }
 
@@ -77,21 +76,80 @@ public class Agent extends AbstractPlayer {
         this.acumTimeTakenEval = 0;
         this.numIters = 0;
         this.globalRemaining = timer.remainingTimeMillis();
-        this.indNum = 0;
+
         this.keepIterating = true;
 
+//        System.out.println("====================== act () ======================");
         // INITIALISE POPULATION
-        init_pop(stateObs);
+//        init_pop(stateObs);
+        if (this.isFirstTime) {
+            this.init_pop(stateObs);
+            this.isFirstTime = false;
+//            System.out.println("Init populations");
+        } else {
+            for (int i = 0; i < this.indNum; i++) {
+                this.population[i].actions.remove(0);
+                this.population[i].actions.add(this.randomGenerator.nextInt(numActions));
+                this.evaluate(this.population[i], this.heuristic, stateObs);
+            }
+            Arrays.sort(this.population, (o1, o2) -> {
+                if (o1 == null && o2 == null) {
+                    return 0;
+                }
+                if (o1 == null) {
+                    return 1;
+                }
+                if (o2 == null) {
+                    return -1;
+                }
+                return o1.compareTo(o2);
+            });
+//            System.out.println("Re-evaled populations");
+        }
+//        System.out.printf("Size of action mapping: %d. ", this.actionMapping.size());
+//        for (int i = 0; i < 6; i++) {
+//            System.out.print(this.actionMapping.get(i));
+//            System.out.print(" ");
+//        }
+//        System.out.printf("\n");
 
+//        System.out.printf("Individual num of population: %d\n", this.indNum);
+        int iterCnt = 0;
         // RUN EVOLUTION
         this.globalRemaining = this.timer.remainingTimeMillis();
         while (this.globalRemaining > this.avgTimeTaken && this.globalRemaining > BREAK_MS && this.keepIterating) {
+            iterCnt += 1;
+            if (iterCnt - this.lastIterNum >= MAX_ITER_DIFF)  {
+                this.mutOnFirst = true;
+                System.out.println("here");
+                for (int i = 0; i < ELITISM; i++) {
+                    this.nextPop[i].mutate(0, true);
+                }
+                runIteration(stateObs);
+                this.globalRemaining = this.timer.remainingTimeMillis();
+                this.mutOnFirst = false;
+//                break;
+            }
             runIteration(stateObs);
             this.globalRemaining = this.timer.remainingTimeMillis();
         }
 
+        System.out.printf("IterCnt: %d\n", iterCnt);
+        this.lastIterNum = iterCnt;
+
         // RETURN ACTION
-        return get_best_action(this.population);
+        Types.ACTIONS action = get_best_action(this.population);
+//        for (int j = 0; j < this.indNum; j++) {
+//            System.out.printf("Actions of population[%d]: ", j);
+//            for (int i = 0; i < this.population[j].actions.size(); i++) {
+//                System.out.print(this.actionMapping.get(this.population[j].actions.get(i)));
+//                System.out.print(' ');
+//            }
+//            System.out.print('\n');
+//        }
+//        System.out.println(action);
+//        System.out.println("======================++++++++======================");
+        return action;
     }
 
     /**
@@ -100,16 +158,20 @@ public class Agent extends AbstractPlayer {
      */
     private void runIteration(StateObservation stateObs) {
         ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
+//        System.out.println("runIteration()");
 
         if (this.indNum > 1) {
-            for (int i = ELITISM; i < this.indNum; i++) {
+            int curIndNum = ELITISM;
+            for (int i = ELITISM; i < POPULATION_SIZE; i++) {
                 if (this.globalRemaining > 2 * this.avgTimeTakenEval && this.globalRemaining > BREAK_MS) {
                     // if enough time to evaluate one more individual
                     Individual newInd = crossover();
-                    newInd = newInd.mutate(MUTATION);
+                    //newInd = newInd.mutate(MUTATION_NUM);
+                    newInd.mutate(MUTATION_NUM, this.mutOnFirst);
 
                     // evaluate new individual, insert into population
-                    add_individual(newInd, this.nextPop, i, stateObs);
+                    this.add_individual(newInd, this.nextPop, i, stateObs);
+                    curIndNum += 1;
 
                     this.globalRemaining = this.timer.remainingTimeMillis();
                 } else {
@@ -117,6 +179,7 @@ public class Agent extends AbstractPlayer {
                     break;
                 }
             }
+            if (curIndNum > this.indNum) this.indNum = curIndNum;
 
             Arrays.sort(this.nextPop, (o1, o2) -> {
                 if (o1 == null && o2 == null) {
@@ -132,8 +195,10 @@ public class Agent extends AbstractPlayer {
             });
 
         } else if (this.indNum == 1){
-            Individual newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator).mutate(MUTATION);
-            evaluate(newInd, this.heuristic, stateObs);
+//            Individual newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator).mutate(MUTATION_NUM);
+            Individual newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
+            newInd.mutate(MUTATION_NUM, false);
+            this.evaluate(newInd, this.heuristic, stateObs);
             if (newInd.value > this.population[0].value)
                 this.nextPop[0] = newInd;
         }
@@ -143,6 +208,7 @@ public class Agent extends AbstractPlayer {
         this.numIters++;
         this.acumTimeTaken += (elapsedTimerIteration.elapsedMillis());
         this.avgTimeTaken = this.acumTimeTaken / this.numIters;
+//        System.out.println("End runIteration()");
     }
 
     /**
@@ -163,7 +229,8 @@ public class Agent extends AbstractPlayer {
         for (i = 0; i < SIMULATION_DEPTH; i++) {
             if (!stCopy.isGameOver()) {
                 ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
-                stCopy.advance(this.actionMapping.get(individual.actions[i]));
+//                stCopy.advance(this.actionMapping.get(individual.actions[i]));
+                stCopy.advance(this.actionMapping.get(individual.actions.get(i)));
 
                 acum += elapsedTimerIteration.elapsedMillis();
                 avg = acum / (i+1);
@@ -190,37 +257,76 @@ public class Agent extends AbstractPlayer {
      * @return - the individual resulting from crossover applied to the specified population
      */
     private Individual crossover() {
+//        System.out.println("\tcrossover()");
         Individual newInd = null;
         if (this.indNum > 1) {
             newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
-            Individual[] tournament = new Individual[TOURNAMENT_SIZE];
-            ArrayList<Individual> popList = new ArrayList<>(Arrays.asList(this.population));
+            Individual[] tournament = null;
 
-            //Select a number of random distinct individuals for tournament and sort them based on value
-            Random ratioGenerator = new Random();
-            int betterParentRank = popList.size() > BETTER_PARENT_RANK ? BETTER_PARENT_RANK : popList.size() / 2;
-            for (int i = 0; i < TOURNAMENT_SIZE; i++) {
-                if (ratioGenerator.nextInt(100) < BETTER_PARENT_PROB * 100) {
-                    int idx = this.randomGenerator.nextInt(betterParentRank);
-                    tournament[i] = popList.get(idx);
-                    popList.remove(idx);
-                } else {
-                    int idx = this.randomGenerator.nextInt(popList.size() - betterParentRank) + betterParentRank;
-                    tournament[i] = popList.get(idx);
-                    popList.remove(idx);
+            if (this.indNum <= TOURNAMENT_SIZE) {
+                tournament = new Individual[this.indNum];
+                for (int i = 0; i < this.indNum; i++) {
+                    tournament[i] = this.population[i];
+                }
+            } else {
+                tournament = new Individual[TOURNAMENT_SIZE];
+                ArrayList<Individual> popList = new ArrayList<>(Arrays.asList(this.population));
+
+                //Select a number of random distinct individuals for tournament and sort them based on value
+                Random ratioGenerator = new Random();
+                int betterParentRank = this.indNum > BETTER_PARENT_RANK ? BETTER_PARENT_RANK : this.indNum / 2;
+                int lastIndIdx = this.indNum - 1;
+                for (int i = 0; i < TOURNAMENT_SIZE; i++) {
+//                    System.out.printf("\t\tpopList size %d, bPR: %d, lastIdx: %d\n", popList.size(), betterParentRank, lastIndIdx);
+                    if (ratioGenerator.nextInt(100) < BETTER_PARENT_PROB * 100) {
+                        if (betterParentRank <= 0) {
+                            i -= 1;
+                            continue;
+                        }
+                        int idx = this.randomGenerator.nextInt(betterParentRank);
+//                        System.out.printf("\t\tidx: %d", idx);
+                        tournament[i] = popList.get(idx);
+//                        System.out.print("\t\tBetter parents: ");
+//                        System.out.println(popList.get(idx).getClass());
+                        popList.remove(idx);
+                        betterParentRank -= 1;
+                        lastIndIdx -= 1;
+                    } else {
+                        if (lastIndIdx <= betterParentRank) {
+                            i -= 1;
+                            continue;
+                        }
+                        int idx = this.randomGenerator.nextInt(lastIndIdx - betterParentRank) + betterParentRank;
+//                        System.out.printf("\t\tidx: %d", idx);
+                        tournament[i] = popList.get(idx);
+//                        System.out.print("\t\tWorse parents: ");
+//                        System.out.println(popList.get(idx).getClass());
+                        popList.remove(idx);
+                        lastIndIdx -= 1;
+                    }
                 }
             }
+
             Arrays.sort(tournament);
+
+//            System.out.print("\t\t");
+//            for (int i = 0; i < tournament.length; i++) {
+//                System.out.print("ha");
+//                System.out.print(" ");
+//            }
+//            System.out.print("\n");
 
             //get best individuals in tournament as parents
             if (TOURNAMENT_SIZE >= 2) {
                 Random crossGenerator = new Random();
                 this.crossType = crossGenerator.nextInt(3);
+//                System.out.println(newInd.actions.size());
                 newInd.crossover(tournament[0], tournament[1], this.crossType);
             } else {
                 System.out.println("WARNING: Number of parents must be LESS than tournament size.");
             }
         }
+//        System.out.println("\tEnd crossover()");
         return newInd;
     }
 
@@ -232,7 +338,7 @@ public class Agent extends AbstractPlayer {
      * @param stateObs - current game state
      */
     private void add_individual(Individual newInd, Individual[] pop, int idx, StateObservation stateObs) {
-        evaluate(newInd, this.heuristic, stateObs);
+        this.evaluate(newInd, this.heuristic, stateObs);
         pop[idx] = newInd.copy();
     }
 
@@ -258,7 +364,7 @@ public class Agent extends AbstractPlayer {
         for (int i = 0; i < POPULATION_SIZE; i++) {
             if (i == 0 || remaining > this.avgTimeTakenEval && remaining > BREAK_MS) {
                 population[i] = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
-                evaluate(this.population[i], this.heuristic, stateObs);
+                this.evaluate(this.population[i], this.heuristic, stateObs);
                 remaining = this.timer.remainingTimeMillis();
                 this.indNum = i + 1;
             } else {break;}
@@ -290,7 +396,10 @@ public class Agent extends AbstractPlayer {
      * @return - first action of best individual in the population (found at index 0)
      */
     private Types.ACTIONS get_best_action(Individual[] pop) {
-        int bestAction = pop[0].actions[0];
+//        int bestAction = pop[0].actions[0];
+        int bestAction = pop[0].actions.get(0);
         return this.actionMapping.get(bestAction);
     }
+    
+
 }
