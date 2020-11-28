@@ -30,6 +30,7 @@ public class Agent extends AbstractPlayer {
     private static final double BETTER_PARENT_PROB = 0.7; //在选择个体进入tournament时,
                                                         // 以 BETTER_PARENT_RATIO 概率选择前 BETTER_PARENT_RANK 范围内的个体
 
+    // 游戏编号
     protected static final int BM = 9;
     protected static final int JAWS = 56;
     protected static final int RF = 80;
@@ -134,16 +135,12 @@ public class Agent extends AbstractPlayer {
         this.globalRemaining = timer.remainingTimeMillis();
         this.keepIterating = true;
 
-//        System.out.println("====================== act () ======================");
-
 //        this.printInfo(stateObs);
 
         // INITIALISE POPULATION
-//        init_pop(stateObs);
         if (this.isFirstTime) {
             this.init_pop(stateObs);
             this.isFirstTime = false;
-//            System.out.println("Init populations");
         } else {
             for (int i = 0; i < this.indNum; i++) {
                 this.population[i].actions.remove(0);
@@ -162,39 +159,18 @@ public class Agent extends AbstractPlayer {
                 }
                 return o1.compareTo(o2);
             });
-//            System.out.println("Re-evaled populations");
         }
-//        System.out.printf("Size of action mapping: %d. ", this.actionMapping.size());
-//        for (int i = 0; i < 6; i++) {
-//            System.out.print(this.actionMapping.get(i));
-//            System.out.print(" ");
-//        }
-//        System.out.printf("\n");
 
-//        System.out.printf("Individual num of population: %d\n", this.indNum);
-        int iterCnt = 0;
         // RUN EVOLUTION
         this.globalRemaining = this.timer.remainingTimeMillis();
         while (this.globalRemaining > this.avgTimeTaken && this.globalRemaining > BREAK_MS && this.keepIterating) {
-            iterCnt += 1;
             runIteration(stateObs);
             this.globalRemaining = this.timer.remainingTimeMillis();
         }
 
-//        System.out.printf("IterCnt: %d\n", iterCnt);
 
         // RETURN ACTION
         Types.ACTIONS action = get_best_action(this.population);
-//        for (int j = 0; j < this.indNum; j++) {
-//            System.out.printf("Actions of population[%d]: ", j);
-//            for (int i = 0; i < this.population[j].actions.size(); i++) {
-//                System.out.print(this.actionMapping.get(this.population[j].actions.get(i)));
-//                System.out.print(' ');
-//            }
-//            System.out.print('\n');
-//        }
-//        System.out.println(action);
-//        System.out.println("======================++++++++======================");
         return action;
     }
 
@@ -204,7 +180,6 @@ public class Agent extends AbstractPlayer {
      */
     private void runIteration(StateObservation stateObs) {
         ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
-//        System.out.println("runIteration()");
 
         if (this.indNum > 1) {
             int curIndNum = ELITISM;
@@ -252,7 +227,6 @@ public class Agent extends AbstractPlayer {
         this.numIters++;
         this.acumTimeTaken += (elapsedTimerIteration.elapsedMillis());
         this.avgTimeTaken = this.acumTimeTaken / this.numIters;
-//        System.out.println("End runIteration()");
     }
 
     /**
@@ -299,7 +273,6 @@ public class Agent extends AbstractPlayer {
      * @return - the individual resulting from crossover applied to the specified population
      */
     private Individual crossover() {
-//        System.out.println("\tcrossover()");
         Individual newInd = null;
         if (this.indNum > 1) {
             newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
@@ -319,17 +292,13 @@ public class Agent extends AbstractPlayer {
                 int betterParentRank = this.indNum > BETTER_PARENT_RANK ? BETTER_PARENT_RANK : this.indNum / 2;
                 int lastIndIdx = this.indNum - 1;
                 for (int i = 0; i < TOURNAMENT_SIZE; i++) {
-//                    System.out.printf("\t\tpopList size %d, bPR: %d, lastIdx: %d\n", popList.size(), betterParentRank, lastIndIdx);
                     if (ratioGenerator.nextInt(100) < BETTER_PARENT_PROB * 100) {
                         if (betterParentRank <= 0) {
                             i -= 1;
                             continue;
                         }
                         int idx = this.randomGenerator.nextInt(betterParentRank);
-//                        System.out.printf("\t\tidx: %d", idx);
                         tournament[i] = popList.get(idx);
-//                        System.out.print("\t\tBetter parents: ");
-//                        System.out.println(popList.get(idx).getClass());
                         popList.remove(idx);
                         betterParentRank -= 1;
                         lastIndIdx -= 1;
@@ -339,10 +308,7 @@ public class Agent extends AbstractPlayer {
                             continue;
                         }
                         int idx = this.randomGenerator.nextInt(lastIndIdx - betterParentRank) + betterParentRank;
-//                        System.out.printf("\t\tidx: %d", idx);
                         tournament[i] = popList.get(idx);
-//                        System.out.print("\t\tWorse parents: ");
-//                        System.out.println(popList.get(idx).getClass());
                         popList.remove(idx);
                         lastIndIdx -= 1;
                     }
@@ -351,24 +317,15 @@ public class Agent extends AbstractPlayer {
 
             Arrays.sort(tournament);
 
-//            System.out.print("\t\t");
-//            for (int i = 0; i < tournament.length; i++) {
-//                System.out.print("ha");
-//                System.out.print(" ");
-//            }
-//            System.out.print("\n");
-
             //get best individuals in tournament as parents
             if (TOURNAMENT_SIZE >= 2) {
                 Random crossGenerator = new Random();
                 this.crossType = crossGenerator.nextInt(3);
-//                System.out.println(newInd.actions.size());
                 newInd.crossover(tournament[0], tournament[1], this.crossType);
             } else {
                 System.out.println("WARNING: Number of parents must be LESS than tournament size.");
             }
         }
-//        System.out.println("\tEnd crossover()");
         return newInd;
     }
 
