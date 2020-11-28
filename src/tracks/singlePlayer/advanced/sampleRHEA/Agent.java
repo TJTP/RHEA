@@ -70,12 +70,12 @@ public class Agent extends AbstractPlayer {
         init_pop(stateObs);
 
         // RUN EVOLUTION
+
         remaining = timer.remainingTimeMillis();
         while (remaining > avgTimeTaken && remaining > BREAK_MS && keepIterating) {
             runIteration(stateObs);
             remaining = timer.remainingTimeMillis();
         }
-
         // RETURN ACTION
         return get_best_action(population);
     }
