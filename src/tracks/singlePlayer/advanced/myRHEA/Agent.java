@@ -1,12 +1,15 @@
 package tracks.singlePlayer.advanced.myRHEA;
 
+import core.game.Observation;
 import core.game.StateObservation;
 import core.player.AbstractPlayer;
 import ontology.Types;
 import tools.ElapsedCpuTimer;
+import tools.Vector2d;
 import tracks.singlePlayer.tools.Heuristics.StateHeuristic;
 import tracks.singlePlayer.tools.Heuristics.WinScoreHeuristic;
 
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -18,19 +21,25 @@ public class Agent extends AbstractPlayer {
     protected static final int UNIFORM_CROSS = 0;
     protected static final int POINT1_CROSS = 1;
     protected static final int POINT2_CROSS = 2;
-    protected static final double MUT_PROB = 0.6;
-    private static final int POPULATION_SIZE = 10;
+    protected static final double MUT_PROB = 0.96;
     private static final long BREAK_MS = 10;
-    private static final int SIMULATION_DEPTH = 8;
-    private static final int MUTATION_NUM = 1;
+
     private static final int ELITISM = 2;
     private static final int TOURNAMENT_SIZE = 3;
     private static final int BETTER_PARENT_RANK = 5; //前 BETTER_PARENT_RANK 个个体视为优秀父母个体
-    private static final double BETTER_PARENT_PROB = 0.6; //在选择个体进入tournament时,
+    private static final double BETTER_PARENT_PROB = 0.7; //在选择个体进入tournament时,
                                                         // 以 BETTER_PARENT_RATIO 概率选择前 BETTER_PARENT_RANK 范围内的个体
-    private static final int MAX_ITER_DIFF = 5;
+
+    protected static final int BM = 9;
+    protected static final int JAWS = 56;
+    protected static final int RF = 80;
+    protected static final int SM = 89;
 
     // Parameters
+    private static int POPULATION_SIZE;
+    private static int SIMULATION_DEPTH;
+    private static int MUTATION_NUM;
+    private static int gameType;
     private int crossType;
     private int indNum;
     private int numActions;
@@ -39,8 +48,6 @@ public class Agent extends AbstractPlayer {
     private Individual[] population, nextPop;
     private HashMap<Integer, Types.ACTIONS> actionMapping;
     private Random randomGenerator;
-    private int lastIterNum;
-    private boolean mutOnFirst;
 
     // Budgets
     private ElapsedCpuTimer timer;
@@ -56,15 +63,64 @@ public class Agent extends AbstractPlayer {
      * @param elapsedTimer Timer for the controller creation.
      */
     public Agent(StateObservation stateObs, ElapsedCpuTimer elapsedTimer) {
+        this.gameType = this.recognizeGameType(stateObs);
+        if (this.gameType == BM) {
+            POPULATION_SIZE = 16;
+            SIMULATION_DEPTH = 4;
+            MUTATION_NUM = 2;
+        } else if (this.gameType == JAWS) {
+            POPULATION_SIZE = 16;
+            SIMULATION_DEPTH = 4;
+            MUTATION_NUM = 2;
+        } else if (this.gameType == RF) {
+            POPULATION_SIZE = 12;
+            SIMULATION_DEPTH = 10;
+            MUTATION_NUM = 1;
+        } else if (this.gameType == SM) {
+            POPULATION_SIZE = 15;
+            SIMULATION_DEPTH = 15;
+            MUTATION_NUM = 2;
+        } else {
+            POPULATION_SIZE = 16;
+            SIMULATION_DEPTH = 4;
+            MUTATION_NUM = 2;
+        }
+
         this.crossType = UNIFORM_CROSS;
         this.indNum = 0;
         this.isFirstTime = true;
-        //this.heuristic = new MyHeuristic();
-        this.heuristic = new WinScoreHeuristic(stateObs);
+        this.heuristic = new MyHeuristic(this.gameType);
+//        this.heuristic = new WinScoreHeuristic(stateObs);
         this.randomGenerator = new Random();
-        this.lastIterNum = 1;
-        this.mutOnFirst = false;
 
+    }
+    private void printInfo (StateObservation stateObs) {
+        Vector2d avatarPosition = stateObs.getAvatarPosition();
+        HashMap<Integer, Integer> resources = stateObs.getAvatarResources();
+
+        System.out.println("====================== Info () ======================");
+        System.out.print("World dimension: ");
+        System.out.println(stateObs.getWorldDimension());
+        System.out.print("Block size: ");
+        System.out.println(stateObs.getBlockSize());
+        System.out.print("Resources: ");
+        System.out.println(resources);
+        System.out.print("Avatar hp: ");
+        System.out.println(stateObs.getAvatarHealthPoints());
+
+        ArrayList<Observation>[] npcPositions = stateObs.getNPCPositions(avatarPosition);
+        ArrayList<Observation>[] portalPositions = stateObs.getPortalsPositions(avatarPosition);
+        ArrayList<Observation>[] immovables = stateObs.getImmovablePositions(avatarPosition);
+        ArrayList<Observation>[] movables = stateObs.getMovablePositions(avatarPosition);
+        ArrayList<Observation>[] alObses = npcPositions;
+        if (alObses != null) {
+            System.out.print("alObeses len: ");
+            System.out.println(alObses.length);
+            for (ArrayList<Observation> al: alObses) {
+                System.out.println(al);
+            }
+        }
+        System.out.println("======================++++++++======================");
     }
 
     @Override
@@ -76,10 +132,12 @@ public class Agent extends AbstractPlayer {
         this.acumTimeTakenEval = 0;
         this.numIters = 0;
         this.globalRemaining = timer.remainingTimeMillis();
-
         this.keepIterating = true;
 
 //        System.out.println("====================== act () ======================");
+
+//        this.printInfo(stateObs);
+
         // INITIALISE POPULATION
 //        init_pop(stateObs);
         if (this.isFirstTime) {
@@ -90,7 +148,7 @@ public class Agent extends AbstractPlayer {
             for (int i = 0; i < this.indNum; i++) {
                 this.population[i].actions.remove(0);
                 this.population[i].actions.add(this.randomGenerator.nextInt(numActions));
-                this.evaluate(this.population[i], this.heuristic, stateObs);
+                this.evaluate(this.population[i], stateObs);
             }
             Arrays.sort(this.population, (o1, o2) -> {
                 if (o1 == null && o2 == null) {
@@ -119,23 +177,11 @@ public class Agent extends AbstractPlayer {
         this.globalRemaining = this.timer.remainingTimeMillis();
         while (this.globalRemaining > this.avgTimeTaken && this.globalRemaining > BREAK_MS && this.keepIterating) {
             iterCnt += 1;
-            if (iterCnt - this.lastIterNum >= MAX_ITER_DIFF)  {
-                this.mutOnFirst = true;
-                System.out.println("here");
-                for (int i = 0; i < ELITISM; i++) {
-                    this.nextPop[i].mutate(0, true);
-                }
-                runIteration(stateObs);
-                this.globalRemaining = this.timer.remainingTimeMillis();
-                this.mutOnFirst = false;
-//                break;
-            }
             runIteration(stateObs);
             this.globalRemaining = this.timer.remainingTimeMillis();
         }
 
-        System.out.printf("IterCnt: %d\n", iterCnt);
-        this.lastIterNum = iterCnt;
+//        System.out.printf("IterCnt: %d\n", iterCnt);
 
         // RETURN ACTION
         Types.ACTIONS action = get_best_action(this.population);
@@ -166,8 +212,7 @@ public class Agent extends AbstractPlayer {
                 if (this.globalRemaining > 2 * this.avgTimeTakenEval && this.globalRemaining > BREAK_MS) {
                     // if enough time to evaluate one more individual
                     Individual newInd = crossover();
-                    //newInd = newInd.mutate(MUTATION_NUM);
-                    newInd.mutate(MUTATION_NUM, this.mutOnFirst);
+                    newInd.mutate(MUTATION_NUM);
 
                     // evaluate new individual, insert into population
                     this.add_individual(newInd, this.nextPop, i, stateObs);
@@ -195,10 +240,9 @@ public class Agent extends AbstractPlayer {
             });
 
         } else if (this.indNum == 1){
-//            Individual newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator).mutate(MUTATION_NUM);
             Individual newInd = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
-            newInd.mutate(MUTATION_NUM, false);
-            this.evaluate(newInd, this.heuristic, stateObs);
+            newInd.mutate(MUTATION_NUM);
+            this.evaluate(newInd, stateObs);
             if (newInd.value > this.population[0].value)
                 this.nextPop[0] = newInd;
         }
@@ -215,11 +259,10 @@ public class Agent extends AbstractPlayer {
      * Evaluates an individual by rolling the current state with the actions in the individual
      * and returning the value of the resulting state; random action chosen for the opponent
      * @param individual - individual to be valued
-     * @param heuristic - heuristic to be used for state evaluation
      * @param state - current state, root of rollouts
      * @return - value of last state reached
      */
-    private double evaluate(Individual individual, StateHeuristic heuristic, StateObservation state) {
+    private double evaluate(Individual individual, StateObservation state) {
 
         ElapsedCpuTimer elapsedTimerIterationEval = new ElapsedCpuTimer();
 
@@ -229,7 +272,6 @@ public class Agent extends AbstractPlayer {
         for (i = 0; i < SIMULATION_DEPTH; i++) {
             if (!stCopy.isGameOver()) {
                 ElapsedCpuTimer elapsedTimerIteration = new ElapsedCpuTimer();
-//                stCopy.advance(this.actionMapping.get(individual.actions[i]));
                 stCopy.advance(this.actionMapping.get(individual.actions.get(i)));
 
                 acum += elapsedTimerIteration.elapsedMillis();
@@ -338,7 +380,7 @@ public class Agent extends AbstractPlayer {
      * @param stateObs - current game state
      */
     private void add_individual(Individual newInd, Individual[] pop, int idx, StateObservation stateObs) {
-        this.evaluate(newInd, this.heuristic, stateObs);
+        this.evaluate(newInd, stateObs);
         pop[idx] = newInd.copy();
     }
 
@@ -364,7 +406,7 @@ public class Agent extends AbstractPlayer {
         for (int i = 0; i < POPULATION_SIZE; i++) {
             if (i == 0 || remaining > this.avgTimeTakenEval && remaining > BREAK_MS) {
                 population[i] = new Individual(SIMULATION_DEPTH, this.numActions, this.randomGenerator);
-                this.evaluate(this.population[i], this.heuristic, stateObs);
+                this.evaluate(this.population[i], stateObs);
                 remaining = this.timer.remainingTimeMillis();
                 this.indNum = i + 1;
             } else {break;}
@@ -400,6 +442,14 @@ public class Agent extends AbstractPlayer {
         int bestAction = pop[0].actions.get(0);
         return this.actionMapping.get(bestAction);
     }
-    
 
+    private int recognizeGameType(StateObservation stateObs) {
+        int blockSize = stateObs.getBlockSize();
+        Dimension wd = stateObs.getWorldDimension();
+        if (blockSize== 24 && wd.width == 480 && wd.height == 216) return BM;
+        else if (blockSize == 38 && wd.width == 798 && wd.height == 342) return  JAWS;
+        else if (blockSize == 24 && wd.width == 240 && wd.height == 360) return  RF;
+        else if (blockSize == 36 && wd.width == 792 && wd.height == 504) return SM;
+        return -1;
+    }
 }
