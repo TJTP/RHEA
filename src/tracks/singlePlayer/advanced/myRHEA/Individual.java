@@ -17,11 +17,6 @@ public class Individual implements Comparable{
         }
         this.nLegalActions = nLegalActions;
         this.gen = gen;
-//        System.out.printf("Action size: %d\n", this.actions.size());
-//        for (Integer i: this.actions) {
-//            System.out.printf("%d ", i);
-//        }
-//        System.out.print('\n');
     }
 
 
