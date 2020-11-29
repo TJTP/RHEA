@@ -1,12 +1,17 @@
 package tracks.singlePlayer.tools.human;
 
 import core.game.Game;
+import core.game.Observation;
 import core.game.StateObservation;
 import core.player.AbstractPlayer;
 import ontology.Types;
 import tools.Direction;
 import tools.ElapsedCpuTimer;
 import tools.Utils;
+import tools.Vector2d;
+
+import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Created by diego on 06/02/14.
@@ -23,6 +28,35 @@ public class Agent extends AbstractPlayer
     {
     }
 
+    private void printInfo (StateObservation stateObs) {
+        Vector2d avatarPosition = stateObs.getAvatarPosition();
+        ArrayList<Observation>[] npcPositions = stateObs.getNPCPositions(avatarPosition);
+        ArrayList<Observation>[] portalPositions = stateObs.getPortalsPositions(avatarPosition);
+        ArrayList<Observation>[] immovables = stateObs.getImmovablePositions(avatarPosition);
+        ArrayList<Observation>[] movables = stateObs.getMovablePositions(avatarPosition);
+        HashMap<Integer, Integer> resources = stateObs.getAvatarResources();
+
+        System.out.println("====================== Info () ======================");
+//        System.out.print("World dimension: ");
+//        System.out.println(stateObs.getWorldDimension());
+//        System.out.print("Block size: ");
+//        System.out.println(stateObs.getBlockSize());
+        System.out.print("Resources: ");
+        System.out.println(resources);
+//        System.out.print("Avatar hp: ");
+//        System.out.println(stateObs.getAvatarHealthPoints());
+
+
+//        ArrayList<Observation>[] alObses = portalPositions;
+//        if (alObses != null) {
+//            System.out.print("alObeses len: ");
+//            System.out.println(alObses.length);
+//            for (ArrayList<Observation> al: alObses) {
+//                System.out.println(al);
+//            }
+//        }
+        System.out.println("======================++++++++======================");
+    }
 
     /**
      * Picks an action. This function is called every game step to request an
@@ -43,7 +77,7 @@ public class Agent extends AbstractPlayer
         if(useOn) //This allows switching to Use when moving.
             action = Types.ACTIONS.ACTION_USE;
 
-
+//        this.printInfo(stateObs);
         return action;
     }
 
